@@ -888,10 +888,8 @@ function buildCards() {
       min-camera-orbit="auto auto 5%"
       max-camera-orbit="auto auto 220%"
       style="width:100%;height:100%;background:transparent;--poster-color:transparent">
-      <button slot="ar-button" id="arSlotBtn_${idx}" style="position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));right:20px;width:56px;min-height:52px;background:rgba(240,232,213,0.07);border:1px solid rgba(240,232,213,0.18);border-radius:6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;z-index:20;backdrop-filter:blur(8px);color:rgba(240,232,213,0.85);font-family:'DM Sans',sans-serif;">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-        <span style="font-size:8px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(240,232,213,0.55)">AR</span>
-      </button>
+      <!-- AR activation button inside model-viewer (must not be display:none or model-viewer won't register AR) -->
+      <button slot="ar-button" id="arSlotBtn_${idx}" style="position:absolute;bottom:0;right:0;width:1px;height:1px;opacity:0;pointer-events:none;"></button>
     </model-viewer>
     <div class="model-loader" id="loader_${idx}">
       <div class="loader-ring"></div>
@@ -941,7 +939,16 @@ function buildCards() {
       <div class="btn-add-cart-sub">₹ ${item.price.toLocaleString('en-IN')} per item</div>
     </div>
   </button>
-
+  <button class="btn-ar${has3d?'':' no-model'}" id="arBtn_${idx}" onclick="${has3d?`triggerAR(${idx})`:'void(0)'}" ${has3d?'':'disabled'} title="${t.tapAR||'View in AR'}">
+    <div class="btn-ar-icon">
+      <svg class="ar-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+        <path d="M2 17l10 5 10-5"/>
+        <path d="M2 12l10 5 10-5"/>
+      </svg>
+    </div>
+    <div class="btn-ar-txt">AR</div>
+  </button>
 </div>`;
 
     track.appendChild(card);
@@ -965,6 +972,8 @@ function buildCards() {
 
         // AR status feedback
         mv.addEventListener('ar-status', (e)=>{
+          const arBtn = document.getElementById('arBtn_'+idx);
+          if (!arBtn) return;
           if (e.detail.status === 'failed') showToast('📱 AR not available on this device/browser');
         });
       }
@@ -981,6 +990,52 @@ function buildMenu() {
     setTimeout(()=>{ document.getElementById('globalLoader').style.display='none'; },700);
     document.getElementById('app').style.display='flex';
   },300);
+}
+
+/* ══════════════════════════════════════════════
+   AR TRIGGER — properly handles all AR modes
+══════════════════════════════════════════════ */
+function triggerAR(idx) {
+  const mv = document.getElementById('mv_'+idx);
+  if (!mv) return;
+
+  const activate = () => {
+    // Try native activateAR() first (WebXR / Scene Viewer)
+    if (typeof mv.activateAR === 'function') {
+      try {
+        mv.activateAR();
+        return;
+      } catch(e) {}
+    }
+    // Fallback: click the slot button (triggers Quick Look on iOS)
+    const slotBtn = document.getElementById('arSlotBtn_'+idx);
+    if (slotBtn) {
+      slotBtn.style.pointerEvents = 'auto';
+      slotBtn.click();
+      slotBtn.style.pointerEvents = 'none';
+    } else {
+      showToast('📱 AR not supported on this device/browser');
+    }
+  };
+
+  if (mv.loaded) {
+    activate();
+  } else {
+    // Show loading indicator on AR button
+    const arBtn = document.getElementById('arBtn_'+idx);
+    if (arBtn) {
+      arBtn.style.opacity = '0.5';
+      const orig = arBtn.querySelector('.btn-ar-txt').textContent;
+      arBtn.querySelector('.btn-ar-txt').textContent = '…';
+      const restore = () => {
+        arBtn.style.opacity='';
+        arBtn.querySelector('.btn-ar-txt').textContent = 'AR';
+        arBtn.removeEventListener('click',restore);
+      };
+      mv.addEventListener('load', ()=>{ restore(); activate(); }, {once:true});
+      mv.addEventListener('error', ()=>{ restore(); showToast('❌ Model failed to load'); }, {once:true});
+    }
+  }
 }
 
 /* ══════════════════════════════════════════════
